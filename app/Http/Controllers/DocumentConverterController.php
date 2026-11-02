@@ -43,6 +43,14 @@ class DocumentConverterController extends Controller
             'multiple' => false,
             'type' => 'docx',
         ],
+
+        'pdf-to-epub' => [
+            'name' => 'PDF to EPUB',
+            'description' => 'Convert PDF documents into EPUB ebooks.',
+            'accept' => '.pdf,application/pdf',
+            'multiple' => false,
+            'type' => 'pdf',
+        ],
     ];
 
     public function show(string $tool)
@@ -137,6 +145,11 @@ class DocumentConverterController extends Controller
                     $jobDirectory
                 ),
 
+                'pdf-to-epub' => $service->pdfToEpub(
+                    $inputPaths[0],
+                    $jobDirectory
+                ),
+
                 default => throw new \RuntimeException(
                     'Unsupported conversion tool.'
                 ),
@@ -152,6 +165,7 @@ class DocumentConverterController extends Controller
                 'pdf-to-jpg' => 'converted-images.zip',
                 'jpg-to-pdf', 'docx-to-pdf' => 'converted.pdf',
                 'pdf-to-word' => 'converted.docx',
+                'pdf-to-epub' => 'converted.epub',
             };
 
             Cache::put(

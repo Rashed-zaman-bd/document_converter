@@ -237,130 +237,180 @@ class DocumentConversionService
      * Convert Word document to PDF using LibreOffice.
      */
     
-public function docxToPdf(
-    string $docxPath,
-    string $jobDirectory
-): string {
+    public function docxToPdf(
+        string $docxPath,
+        string $jobDirectory
+    ): string {
 
-    $soffice = 'C:\\Program Files\\LibreOffice\\program\\soffice.com';
+        $soffice = 'C:\\Program Files\\LibreOffice\\program\\soffice.com';
 
-    // Resolve and validate the uploaded DOCX.
-    $docxPath = realpath($docxPath);
+        // Resolve and validate the uploaded DOCX.
+        $docxPath = realpath($docxPath);
 
-    if (
-        !$docxPath ||
-        !is_file($docxPath) ||
-        !is_readable($docxPath) ||
-        filesize($docxPath) === 0
-    ) {
-        throw new RuntimeException(
-            'DOCX file is missing, empty, or unreadable.'
+        if (
+            !$docxPath ||
+            !is_file($docxPath) ||
+            !is_readable($docxPath) ||
+            filesize($docxPath) === 0
+        ) {
+            throw new RuntimeException(
+                'DOCX file is missing, empty, or unreadable.'
+            );
+        }
+
+        if (!is_file($soffice)) {
+            throw new RuntimeException(
+                'LibreOffice executable not found: ' . $soffice
+            );
+        }
+
+        // Verify DOCX archive structure.
+        $zip = new ZipArchive();
+
+        if ($zip->open($docxPath) !== true) {
+            throw new RuntimeException(
+                'Uploaded file is not a valid DOCX archive.'
+            );
+        }
+
+        $hasDocument = $zip->locateName('word/document.xml') !== false;
+        $hasContentTypes = $zip->locateName('[Content_Types].xml') !== false;
+
+        $zip->close();
+
+        if (!$hasDocument || !$hasContentTypes) {
+            throw new RuntimeException(
+                'Invalid DOCX document structure.'
+            );
+        }
+
+        // Create output directory.
+        $outputDirectory = $jobDirectory .
+            DIRECTORY_SEPARATOR . 'output';
+
+        File::ensureDirectoryExists($outputDirectory);
+
+        // Create a unique LibreOffice profile.
+        $profilePath = storage_path(
+            'app/lo-profiles/' . Str::uuid()
         );
+
+        File::ensureDirectoryExists($profilePath);
+
+        $profileUri = 'file:///' . str_replace(
+            '\\',
+            '/',
+            $profilePath
+        );
+
+        // Run LibreOffice.
+        $process = new SymfonyProcess(
+            [
+                $soffice,
+                '--headless',
+                '--nologo',
+                '--nodefault',
+                '--nolockcheck',
+                '--nofirststartwizard',
+                '-env:UserInstallation=' . $profileUri,
+                '--convert-to',
+                'pdf:writer_pdf_Export',
+                '--outdir',
+                $outputDirectory,
+                $docxPath,
+            ],
+            $jobDirectory,
+            [
+                'SAL_DISABLE_OPENCL' => '1',
+            ]
+        );
+
+        $process->setTimeout(180);
+        $process->run();
+
+        logger()->info('LibreOffice conversion result', [
+            'input' => $docxPath,
+            'input_exists' => file_exists($docxPath),
+            'output_directory' => $outputDirectory,
+            'successful' => $process->isSuccessful(),
+            'output' => $process->getOutput(),
+            'error' => $process->getErrorOutput(),
+        ]);
+
+        if (!$process->isSuccessful()) {
+            throw new RuntimeException(
+                'LibreOffice failed: ' .
+                $process->getErrorOutput() .
+                ' ' .
+                $process->getOutput()
+            );
+        }
+
+        $generatedPdf = $outputDirectory .
+            DIRECTORY_SEPARATOR .
+            pathinfo($docxPath, PATHINFO_FILENAME) .
+            '.pdf';
+
+        if (
+            !is_file($generatedPdf) ||
+            filesize($generatedPdf) === 0
+        ) {
+            throw new RuntimeException(
+                'LibreOffice did not generate a valid PDF.'
+            );
+        }
+
+        return $generatedPdf;
     }
 
-    if (!is_file($soffice)) {
-        throw new RuntimeException(
-            'LibreOffice executable not found: ' . $soffice
-        );
+
+    public function pdfToEpub(
+        string $pdfPath,
+        string $jobDirectory
+    ): string {
+        $converter = 'C:\\Program Files\\Calibre2\\ebook-convert.exe';
+
+        if (!file_exists($converter)) {
+            throw new RuntimeException(
+                'Calibre ebook-convert.exe was not found.'
+            );
+        }
+
+        if (!is_file($pdfPath) || !is_readable($pdfPath)) {
+            throw new RuntimeException(
+                'PDF input file not found or unreadable.'
+            );
+        }
+
+        $tempDirectory = storage_path('app/calibre-temp');
+
+        File::ensureDirectoryExists($tempDirectory);
+
+        $outputPath = $jobDirectory . DIRECTORY_SEPARATOR . 'converted.epub';
+
+        $process = new SymfonyProcess([
+            $converter,
+            $pdfPath,
+            $outputPath,
+        ]);
+
+        $process->setEnv([
+            'TEMP' => $tempDirectory,
+            'TMP' => $tempDirectory,
+            'TMPDIR' => $tempDirectory,
+        ]);
+
+        $process->setTimeout(300);
+        $process->run();
+
+        if (!$process->isSuccessful() || !is_file($outputPath)) {
+            throw new RuntimeException(
+                'PDF to EPUB conversion failed: ' .
+                ($process->getErrorOutput() ?: $process->getOutput())
+            );
+        }
+
+        return $outputPath;
     }
-
-    // Verify DOCX archive structure.
-    $zip = new ZipArchive();
-
-    if ($zip->open($docxPath) !== true) {
-        throw new RuntimeException(
-            'Uploaded file is not a valid DOCX archive.'
-        );
-    }
-
-    $hasDocument = $zip->locateName('word/document.xml') !== false;
-    $hasContentTypes = $zip->locateName('[Content_Types].xml') !== false;
-
-    $zip->close();
-
-    if (!$hasDocument || !$hasContentTypes) {
-        throw new RuntimeException(
-            'Invalid DOCX document structure.'
-        );
-    }
-
-    // Create output directory.
-    $outputDirectory = $jobDirectory .
-        DIRECTORY_SEPARATOR . 'output';
-
-    File::ensureDirectoryExists($outputDirectory);
-
-    // Create a unique LibreOffice profile.
-    $profilePath = storage_path(
-        'app/lo-profiles/' . Str::uuid()
-    );
-
-    File::ensureDirectoryExists($profilePath);
-
-    $profileUri = 'file:///' . str_replace(
-        '\\',
-        '/',
-        $profilePath
-    );
-
-    // Run LibreOffice.
-    $process = new SymfonyProcess(
-        [
-            $soffice,
-            '--headless',
-            '--nologo',
-            '--nodefault',
-            '--nolockcheck',
-            '--nofirststartwizard',
-            '-env:UserInstallation=' . $profileUri,
-            '--convert-to',
-            'pdf:writer_pdf_Export',
-            '--outdir',
-            $outputDirectory,
-            $docxPath,
-        ],
-        $jobDirectory,
-        [
-            'SAL_DISABLE_OPENCL' => '1',
-        ]
-    );
-
-    $process->setTimeout(180);
-    $process->run();
-
-    logger()->info('LibreOffice conversion result', [
-        'input' => $docxPath,
-        'input_exists' => file_exists($docxPath),
-        'output_directory' => $outputDirectory,
-        'successful' => $process->isSuccessful(),
-        'output' => $process->getOutput(),
-        'error' => $process->getErrorOutput(),
-    ]);
-
-    if (!$process->isSuccessful()) {
-        throw new RuntimeException(
-            'LibreOffice failed: ' .
-            $process->getErrorOutput() .
-            ' ' .
-            $process->getOutput()
-        );
-    }
-
-    $generatedPdf = $outputDirectory .
-        DIRECTORY_SEPARATOR .
-        pathinfo($docxPath, PATHINFO_FILENAME) .
-        '.pdf';
-
-    if (
-        !is_file($generatedPdf) ||
-        filesize($generatedPdf) === 0
-    ) {
-        throw new RuntimeException(
-            'LibreOffice did not generate a valid PDF.'
-        );
-    }
-
-    return $generatedPdf;
-}
 
 }
