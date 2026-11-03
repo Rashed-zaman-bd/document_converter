@@ -21,14 +21,14 @@
 
     <a
         href="{{ route('document.download', $id) }}"
-        class="mt-8 inline-flex items-center justify-center rounded-lg bg-blue-600 px-8 py-3 font-semibold text-white transition hover:bg-blue-700"
+        class="mt-8 inline-flex items-center justify-center rounded-lg bg-amber-600 px-8 py-3 font-semibold text-white transition hover:bg-amber-700"
     >
         Download {{ $result['name'] }}
     </a>
 
     <div class="mt-6">
         <a href="{{ route('home') }}"
-           class="text-sm font-medium text-blue-600 hover:underline">
+           class="text-sm font-medium text-amber-600 hover:underline">
             Convert Another File
         </a>
     </div>

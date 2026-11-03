@@ -51,6 +51,22 @@ class DocumentConverterController extends Controller
             'multiple' => false,
             'type' => 'pdf',
         ],
+
+        'epub-to-pdf' => [
+            'name' => 'EPUB to PDF',
+            'description' => 'Convert EPUB ebooks into PDF documents.',
+            'accept' => '.epub,application/epub+zip',
+            'multiple' => false,
+            'type' => 'epub',
+        ],
+
+        'heic-to-pdf' => [
+            'name' => 'HEIC to PDF',
+            'description' => 'Convert HEIC and HEIF images into PDF documents.',
+            'accept' => '.heic,.heif,image/heic,image/heif',
+            'multiple' => false,
+            'type' => 'heic',
+        ],
     ];
 
     public function show(string $tool)
@@ -76,6 +92,8 @@ class DocumentConverterController extends Controller
             'pdf' => ['required', 'file', 'max:10240', 'mimes:pdf'],
             'docx' => ['required', 'file', 'max:10240', 'mimes:docx'],
             'image' => ['required', 'file', 'max:10240', 'mimes:jpg,jpeg'],
+            'epub' => ['required', 'file', 'max:10240', 'mimes:epub'],
+            'heic' => ['required', 'file', 'max:10240', 'mimes:heic,heif'],
             default => ['required', 'file', 'max:10240'],
         };
 
@@ -150,6 +168,16 @@ class DocumentConverterController extends Controller
                     $jobDirectory
                 ),
 
+                'epub-to-pdf' => $service->epubToPdf(
+                    $inputPaths[0],
+                    $jobDirectory
+                ),
+
+                'heic-to-pdf' => $service->heicToPdf(
+                    $inputPaths[0],
+                    $jobDirectory
+                ),
+
                 default => throw new \RuntimeException(
                     'Unsupported conversion tool.'
                 ),
@@ -166,6 +194,8 @@ class DocumentConverterController extends Controller
                 'jpg-to-pdf', 'docx-to-pdf' => 'converted.pdf',
                 'pdf-to-word' => 'converted.docx',
                 'pdf-to-epub' => 'converted.epub',
+                'epub-to-pdf' => 'converted.pdf',
+                'heic-to-pdf' => 'converted.pdf',
             };
 
             Cache::put(

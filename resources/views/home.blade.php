@@ -6,16 +6,16 @@
 @section('content')
 
     {{-- Hero Section --}}
-    <section class="bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+    <section class="pt-10 bg-gradient-to-br from-amber-100 via-white to-amber-200">
         <div class="mx-auto max-w-5xl px-5 py-20 text-center">
 
-            <span class="inline-block rounded-full bg-blue-100 px-4 py-2 text-sm font-semibold text-blue-700">
+            <span class="inline-block rounded-full bg-blue-100 px-4 py-2 text-sm font-semibold text-amber-600">
                 Simple & Fast Document Conversion
             </span>
 
             <h1 class="mt-6 text-4xl font-extrabold tracking-tight text-gray-900 md:text-6xl">
                 Convert Your Files
-                <span class="text-blue-600">Online</span>
+                <span class="text-amber-600">Online</span>
             </h1>
 
             <p class="mx-auto mt-5 max-w-2xl text-lg leading-8 text-gray-600">
@@ -24,7 +24,7 @@
             </p>
 
             <a href="#tools"
-               class="mt-8 inline-block rounded-lg bg-blue-600 px-8 py-3 font-semibold text-white shadow-lg transition hover:bg-blue-700">
+               class="mt-8 inline-block rounded-lg bg-amber-600 px-8 py-3 font-semibold text-white shadow-lg transition hover:bg-amber-700">
                 Explore All Tools
             </a>
 
@@ -33,7 +33,7 @@
 
 
     {{-- Conversion Tools --}}
-    <section id="tools" class="mx-auto max-w-7xl px-5 py-16">
+    <section id="tools" class="mx-auto max-w-7xl px-5 py-30">
 
         <div class="mb-10 text-center">
 
@@ -53,9 +53,9 @@
             @foreach ($tools as $tool)
 
                 <a href="{{ route('document.tool', $tool['slug']) }}"
-                    class="group block rounded-xl border border-gray-200 bg-white p-6 transition duration-300 hover:-translate-y-1 hover:border-blue-400 hover:shadow-xl">
+                    class="group block rounded-xl border border-gray-200 bg-white p-6 transition duration-300 hover:-translate-y-1 hover:border-amber-400 hover:shadow-xl">
 
-                    <div class="flex h-14 w-14 items-center justify-center rounded-xl bg-blue-50 text-lg font-extrabold text-blue-600 group-hover:bg-blue-600 group-hover:text-white">
+                    <div class="flex h-14 w-14 items-center justify-center rounded-xl bg-amber-50 text-lg font-extrabold text-amber-600 group-hover:bg-amber-600 group-hover:text-white">
                         {{ $tool['icon'] }}
                     </div>
 
@@ -69,11 +69,11 @@
 
                     <div class="mt-5 flex items-center justify-between">
 
-                        <span class="text-sm font-medium text-blue-600">
+                        <span class="text-sm font-medium text-amber-600">
                             Convert Now
                         </span>
 
-                        <span class="text-xl text-blue-600 transition group-hover:translate-x-1">
+                        <span class="text-xl text-amber-600 transition group-hover:translate-x-1">
                             &rarr;
                         </span>
 

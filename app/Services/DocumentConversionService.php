@@ -413,4 +413,85 @@ class DocumentConversionService
         return $outputPath;
     }
 
+    public function epubToPdf(
+        string $epubPath,
+        string $jobDirectory
+    ): string {
+        $converter = 'C:\\Program Files\\Calibre2\\ebook-convert.exe';
+
+        if (!file_exists($converter)) {
+            throw new RuntimeException(
+                'Calibre ebook-convert.exe was not found.'
+            );
+        }
+
+        if (!is_file($epubPath) || !is_readable($epubPath)) {
+            throw new RuntimeException(
+                'EPUB input file not found or unreadable.'
+            );
+        }
+
+        $tempDirectory = storage_path('app/calibre-temp');
+
+        File::ensureDirectoryExists($tempDirectory);
+
+        $outputPath = $jobDirectory . DIRECTORY_SEPARATOR . 'converted.pdf';
+
+        $process = new SymfonyProcess([
+            $converter,
+            $epubPath,
+            $outputPath,
+        ]);
+
+        $process->setEnv([
+            'TEMP' => $tempDirectory,
+            'TMP' => $tempDirectory,
+            'TMPDIR' => $tempDirectory,
+        ]);
+
+        $process->setTimeout(300);
+        $process->run();
+
+        if (!$process->isSuccessful() || !is_file($outputPath)) {
+            throw new RuntimeException(
+                'EPUB to PDF conversion failed: ' .
+                ($process->getErrorOutput() ?: $process->getOutput())
+            );
+        }
+
+        return $outputPath;
+    }
+
+
+    public function heicToPdf(string $inputPath, string $jobDirectory): string
+    {
+        $outputPath = $jobDirectory . DIRECTORY_SEPARATOR . 'converted.pdf';
+
+        File::ensureDirectoryExists($jobDirectory);
+
+        // ImageMagick executable
+        $magickPath = 'C:\\Program Files\\ImageMagick-7.1.2-Q16-HDRI\\magick.exe';
+
+        if (!File::exists($magickPath)) {
+            throw new RuntimeException('ImageMagick executable was not found.');
+        }
+
+        $process = new SymfonyProcess([
+            $magickPath,
+            $inputPath,
+            $outputPath,
+        ]);
+
+        $process->setTimeout(300);
+        $process->run();
+
+        if (!$process->isSuccessful() || !File::exists($outputPath)) {
+            throw new RuntimeException(
+                'HEIC to PDF conversion failed: ' . $process->getErrorOutput()
+            );
+        }
+
+        return $outputPath;
+    }
+
 }
