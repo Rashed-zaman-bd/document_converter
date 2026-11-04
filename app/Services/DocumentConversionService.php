@@ -15,95 +15,188 @@ class DocumentConversionService
     /**
      * Convert PDF pages into JPG images and ZIP them.
      */
-    public function pdfToJpg(
-        string $pdfPath,
-        string $jobDirectory
-    ): string {
+    
+public function pdfToJpg(
+    string $pdfPath,
+    string $jobDirectory
+): string {
 
-        if (!is_file($pdfPath)) {
-            throw new RuntimeException('PDF file not found.');
-        }
-
-        // Read PDF information.
-        $pdfInfo = Process::timeout(30)->run([
-            'pdfinfo',
-            $pdfPath,
-        ]);
-
-        if ($pdfInfo->failed()) {
-            throw new RuntimeException(
-                'Unable to read PDF information. Check Poppler installation.'
-            );
-        }
-
-        preg_match(
-            '/^Pages:\s+(\d+)/mi',
-            $pdfInfo->output(),
-            $matches
-        );
-
-        $pages = (int) ($matches[1] ?? 0);
-
-        if ($pages < 1 || $pages > 100) {
-            throw new RuntimeException(
-                'PDF must contain between 1 and 100 pages.'
-            );
-        }
-
-        $imageDirectory = $jobDirectory . DIRECTORY_SEPARATOR . 'images';
-
-        File::ensureDirectoryExists($imageDirectory);
-
-        $prefix = $imageDirectory . DIRECTORY_SEPARATOR . 'page';
-
-        $result = Process::timeout(180)->run([
-            'pdftoppm',
-            '-jpeg',
-            '-r',
-            '150',
-            $pdfPath,
-            $prefix,
-        ]);
-
-        if ($result->failed()) {
-            throw new RuntimeException(
-                'PDF to JPG conversion failed: ' .
-                $result->errorOutput()
-            );
-        }
-
-        // Find generated JPG images.
-        $images = glob($imageDirectory . DIRECTORY_SEPARATOR . 'page-*.jpg');
-
-        if (empty($images)) {
-            throw new RuntimeException(
-                'No JPG images were generated.'
-            );
-        }
-
-        $zipPath = $jobDirectory . DIRECTORY_SEPARATOR . 'converted-images.zip';
-
-        $zip = new ZipArchive();
-
-        if ($zip->open(
-            $zipPath,
-            ZipArchive::CREATE | ZipArchive::OVERWRITE
-        ) !== true) {
-            throw new RuntimeException('Unable to create ZIP file.');
-        }
-
-        foreach ($images as $image) {
-            $zip->addFile($image, basename($image));
-        }
-
-        $zip->close();
-
-        if (!is_file($zipPath) || filesize($zipPath) === 0) {
-            throw new RuntimeException('Generated ZIP file is empty.');
-        }
-
-        return $zipPath;
+    if (!is_file($pdfPath) || !is_readable($pdfPath)) {
+        throw new RuntimeException('PDF file not found or unreadable.');
     }
+
+    // Step 1: Get PDF information.
+    $pdfInfo = Process::timeout(30)->run([
+        'pdfinfo',
+        $pdfPath,
+    ]);
+
+    if ($pdfInfo->failed()) {
+        throw new RuntimeException(
+            'Unable to read PDF information: ' . $pdfInfo->errorOutput()
+        );
+    }
+
+    preg_match(
+        '/^Pages:\s+(\d+)/mi',
+        $pdfInfo->output(),
+        $matches
+    );
+
+    $pages = (int) ($matches[1] ?? 0);
+
+    if ($pages < 1 || $pages > 100) {
+        throw new RuntimeException(
+            'PDF must contain between 1 and 100 pages.'
+        );
+    }
+
+    // Step 2: Create image directory.
+    $imageDirectory = $jobDirectory . DIRECTORY_SEPARATOR . 'images';
+
+    File::ensureDirectoryExists($imageDirectory);
+
+    $prefix = $imageDirectory . DIRECTORY_SEPARATOR . 'page';
+
+    // Step 3: Convert PDF pages into JPG.
+    $result = Process::timeout(180)->run([
+        'pdftoppm',
+        '-jpeg',
+        '-r',
+        '150',
+        $pdfPath,
+        $prefix,
+    ]);
+
+    if ($result->failed()) {
+        throw new RuntimeException(
+            'PDF to JPG conversion failed: ' . $result->errorOutput()
+        );
+    }
+
+    // Step 4: Find generated JPG files.
+    // IMPORTANT: Use page-*.jpg, without a backslash.
+    $images = glob($imageDirectory . DIRECTORY_SEPARATOR . 'page-*.jpg');
+
+    if (empty($images)) {
+        throw new RuntimeException(
+            'No JPG images were generated.'
+        );
+    }
+
+    // Sort images by page number.
+    natsort($images);
+    $images = array_values($images);
+
+    // Check that all expected pages were generated.
+    if (count($images) !== $pages) {
+        throw new RuntimeException(
+            'Expected ' . $pages . ' pages but generated ' . count($images) . ' JPG images.'
+        );
+    }
+
+    // Step 5: Create ZIP archive.
+    $zipPath = $jobDirectory . DIRECTORY_SEPARATOR . 'converted-images.zip';
+
+    if (file_exists($zipPath)) {
+        File::delete($zipPath);
+    }
+
+    $zip = new ZipArchive();
+
+    $openResult = $zip->open(
+        $zipPath,
+        ZipArchive::CREATE | ZipArchive::OVERWRITE
+    );
+
+    if ($openResult !== true) {
+        throw new RuntimeException(
+            'Unable to create ZIP archive. Error code: ' . $openResult
+        );
+    }
+
+    // Step 6: Add every JPG into ZIP.
+    foreach ($images as $index => $image) {
+
+        if (!is_file($image) || filesize($image) === 0) {
+            $zip->close();
+
+            throw new RuntimeException(
+                'Invalid JPG image: ' . basename($image)
+            );
+        }
+
+        $entryName = 'page-' . ($index + 1) . '.jpg';
+
+        if (!$zip->addFile($image, $entryName)) {
+            $zip->close();
+
+            throw new RuntimeException(
+                'Unable to add image to ZIP: ' . basename($image)
+            );
+        }
+    }
+
+    // Step 7: Finalize ZIP archive.
+    if (!$zip->close()) {
+        throw new RuntimeException(
+            'Unable to finalize ZIP archive.'
+        );
+    }
+
+    // Step 8: Verify ZIP file.
+    clearstatcache(true, $zipPath);
+
+    if (!is_file($zipPath) || filesize($zipPath) === 0) {
+        throw new RuntimeException(
+            'Generated ZIP file is missing or empty.'
+        );
+    }
+
+    // Check ZIP signature.
+    $handle = fopen($zipPath, 'rb');
+
+    if ($handle === false) {
+        throw new RuntimeException('Unable to read generated ZIP file.');
+    }
+
+    $signature = fread($handle, 4);
+    fclose($handle);
+
+    if (!in_array($signature, ["PK\x03\x04", "PK\x05\x06", "PK\x07\x08"], true)) {
+        throw new RuntimeException('Generated file is not a valid ZIP archive.');
+    }
+
+    // Reopen archive and verify its contents.
+    $checkZip = new ZipArchive();
+
+    if ($checkZip->open($zipPath, ZipArchive::CHECKCONS) !== true) {
+        throw new RuntimeException(
+            'Generated ZIP archive failed integrity verification.'
+        );
+    }
+
+    if ($checkZip->numFiles !== count($images)) {
+        $checkZip->close();
+
+        throw new RuntimeException(
+            'ZIP archive does not contain all converted images.'
+        );
+    }
+
+    $checkZip->close();
+
+    logger()->info('PDF to JPG ZIP created successfully', [
+        'pdf' => basename($pdfPath),
+        'pages' => $pages,
+        'images' => count($images),
+        'zip' => $zipPath,
+        'zip_size' => filesize($zipPath),
+    ]);
+
+    return $zipPath;
+}
+
 
 
     /**
@@ -242,7 +335,7 @@ class DocumentConversionService
         string $jobDirectory
     ): string {
 
-        $soffice = 'C:\\Program Files\\LibreOffice\\program\\soffice.com';
+        $soffice = config('document.libreoffice_path');
 
         // Resolve and validate the uploaded DOCX.
         $docxPath = realpath($docxPath);
@@ -368,7 +461,7 @@ class DocumentConversionService
         string $pdfPath,
         string $jobDirectory
     ): string {
-        $converter = 'C:\\Program Files\\Calibre2\\ebook-convert.exe';
+        $converter = config('document.calibre_path');
 
         if (!file_exists($converter)) {
             throw new RuntimeException(
@@ -417,7 +510,7 @@ class DocumentConversionService
         string $epubPath,
         string $jobDirectory
     ): string {
-        $converter = 'C:\\Program Files\\Calibre2\\ebook-convert.exe';
+        $converter = config('document.calibre_path');
 
         if (!file_exists($converter)) {
             throw new RuntimeException(
@@ -470,7 +563,7 @@ class DocumentConversionService
         File::ensureDirectoryExists($jobDirectory);
 
         // ImageMagick executable
-        $magickPath = 'C:\\Program Files\\ImageMagick-7.1.2-Q16-HDRI\\magick.exe';
+        $magickPath = config('document.imagemagick_path');
 
         if (!File::exists($magickPath)) {
             throw new RuntimeException('ImageMagick executable was not found.');

@@ -88,14 +88,80 @@ class DocumentConverterController extends Controller
 
         $config = $this->tools[$tool];
 
-        $fileRules = match ($config['type']) {
-            'pdf' => ['required', 'file', 'max:10240', 'mimes:pdf'],
-            'docx' => ['required', 'file', 'max:10240', 'mimes:docx'],
-            'image' => ['required', 'file', 'max:10240', 'mimes:jpg,jpeg'],
-            'epub' => ['required', 'file', 'max:10240', 'mimes:epub'],
-            'heic' => ['required', 'file', 'max:10240', 'mimes:heic,heif'],
+       $fileRules = match ($config['type']) {
+            'pdf' => ['required', 'file', 'max:10240', 'extensions:pdf'],
+
+            'docx' => [
+                'required',
+                'file',
+                'max:10240',
+                'mimes:docx',
+            ],
+
+            'image' => [
+                'required',
+                'file',
+                'max:10240',
+                'mimes:jpg,jpeg',
+            ],
+
+            'epub' => [
+                'required',
+                'file',
+                'max:10240',
+                'mimes:epub',
+            ],
+
+            'heic' => [
+                'required',
+                'file',
+                'max:10240',
+                'mimes:heic,heif',
+            ],
+
             default => ['required', 'file', 'max:10240'],
         };
+
+        $request->validate([
+            'files' => [
+                'required',
+                'array',
+                'min:1',
+                'max:' . ($config['multiple'] ? 20 : 1),
+            ],
+
+            'files.*' => $fileRules,
+        ]);
+
+        // Verify actual PDF file content.
+        if ($config['type'] === 'pdf') {
+
+            foreach ($request->file('files') as $index => $file) {
+
+                $header = file_get_contents(
+                    $file->getRealPath(),
+                    false,
+                    null,
+                    0,
+                    1024
+                );
+
+                if (
+                    $file->getClientOriginalExtension() !== 'pdf' &&
+                    strtolower($file->getClientOriginalExtension()) !== 'pdf'
+                ) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        "files.$index" => 'Please upload a PDF file.',
+                    ]);
+                }
+
+                if ($header === false || !str_contains($header, '%PDF-')) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        "files.$index" => 'The uploaded file is not a valid PDF document.',
+                    ]);
+                }
+            }
+        }
 
         $request->validate([
             'files' => [
@@ -193,6 +259,7 @@ class DocumentConverterController extends Controller
                 'pdf-to-jpg' => 'converted-images.zip',
                 'jpg-to-pdf', 'docx-to-pdf' => 'converted.pdf',
                 'pdf-to-word' => 'converted.docx',
+                'word-to-pdf' => 'converted.pdf',
                 'pdf-to-epub' => 'converted.epub',
                 'epub-to-pdf' => 'converted.pdf',
                 'heic-to-pdf' => 'converted.pdf',
@@ -235,19 +302,47 @@ class DocumentConverterController extends Controller
         return view('document.result', compact('result', 'id'));
     }
 
+    
     public function download(string $id)
     {
         $result = Cache::get('document_conversion:' . $id);
 
         abort_unless(
-            $result && file_exists($result['path']),
+            $result && is_file($result['path']),
             404
         );
 
+        $path = $result['path'];
+        $name = $result['name'];
+
+        $extension = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+
+        $contentType = match ($extension) {
+            'zip' => 'application/zip',
+            'pdf' => 'application/pdf',
+            'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'epub' => 'application/epub+zip',
+            default => 'application/octet-stream',
+        };
+
+        // Remove accidental output before sending binary files.
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+
         Cache::forget('document_conversion:' . $id);
 
-        return response()
-            ->download($result['path'], $result['name'])
-            ->deleteFileAfterSend(true);
+        return response()->download(
+            $path,
+            $name,
+            [
+                'Content-Type' => $contentType,
+                'Content-Length' => filesize($path),
+                'Content-Disposition' => 'attachment; filename="' . $name . '"',
+                'Cache-Control' => 'no-store, no-cache, must-revalidate',
+                'X-Content-Type-Options' => 'nosniff',
+            ]
+        )->deleteFileAfterSend(true);
     }
+
 }
