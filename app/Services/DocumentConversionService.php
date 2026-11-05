@@ -216,7 +216,7 @@ public function pdfToJpg(
             <html>
             <head>
                 <style>
-                    @page {
+@page{
                         margin: 10mm;
                     }
 
